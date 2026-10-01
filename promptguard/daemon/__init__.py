@@ -1,0 +1,1 @@
+"""PromptGuard memory-only daemon."""

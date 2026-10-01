@@ -1,0 +1,6 @@
+promptguard/runtime/*.jsonl
+promptguard/runtime/*.txt
+synthetic_workspace/.pg_*
+synthetic_workspace/.env
+__pycache__/
+*.pyc

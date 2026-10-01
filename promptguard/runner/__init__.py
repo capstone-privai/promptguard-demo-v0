@@ -1,0 +1,1 @@
+"""Opaque operation runner."""

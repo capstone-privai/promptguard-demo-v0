@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from promptguard.decision.mock_predictor import MockPredictor  # noqa: E402
+from promptguard.detector.rules import detect_candidates  # noqa: E402
+from promptguard.redaction.engine import redact  # noqa: E402
+from promptguard.transport.client import TransportError, post  # noqa: E402
+
+
+def _emit(operation_id: str, status: str, exit_code: int, stdout: str = "", stderr: str = "") -> None:
+    sys.stdout.write(
+        f"[PROMPTGUARD_RESULT]\noperation_id={operation_id}\nstatus={status}\nexit_code={exit_code}\n"
+        f"[stdout]\n{stdout}\n[stderr]\n{stderr}\n"
+    )
+
+
+def _safe_event(payload: dict[str, Any]) -> None:
+    try:
+        post("/event", payload)
+    except TransportError:
+        pass
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--operation-id", required=True)
+    args = parser.parse_args()
+    operation_id = args.operation_id
+    started = time.perf_counter()
+    try:
+        operation = post("/claim", {"operation_id": operation_id}, timeout=0.7)
+    except TransportError:
+        _emit(operation_id, "blocked_claim_failed", 71, stderr="PromptGuard operation unavailable.")
+        return 71
+
+    session_id, turn_id = operation["session_id"], operation["turn_id"]
+    try:
+        child = subprocess.run(
+            ["pwsh.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", operation["command"]],
+            cwd=Path.cwd(), capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        stdout_candidates = detect_candidates(child.stdout, session_id=session_id, turn_id=turn_id, operation_id=operation_id, channel="stdout")
+        stderr_candidates = detect_candidates(child.stderr, session_id=session_id, turn_id=turn_id, operation_id=operation_id, channel="stderr")
+        predictor = MockPredictor()
+        stdout_predictions = predictor.predict(stdout_candidates, operation.get("task_context", {}))
+        stderr_predictions = predictor.predict(stderr_candidates, operation.get("task_context", {}))
+
+        def allocate(candidate_type: str, digest: str) -> str:
+            response = post("/placeholder", {"session_id": session_id, "candidate_type": candidate_type, "fingerprint": digest})
+            return str(response["placeholder"])
+
+        safe_stdout = redact(child.stdout, stdout_candidates, stdout_predictions, allocate)
+        safe_stderr = redact(child.stderr, stderr_candidates, stderr_predictions, allocate)
+        all_candidates = [*stdout_candidates, *stderr_candidates]
+        all_predictions = [*stdout_predictions, *stderr_predictions]
+        _safe_event({
+            "event": "runner_complete", "session_id": session_id, "turn_id": turn_id, "operation_id": operation_id,
+            "status": "executed", "exit_code": child.returncode,
+            "candidate_count": len(all_candidates), "candidate_types": [candidate.type for candidate in all_candidates],
+            "actions": [prediction.action for prediction in all_predictions],
+            "latency_ms": round((time.perf_counter() - started) * 1000, 2), "marker_present": False,
+        })
+        _emit(operation_id, "executed", child.returncode, safe_stdout, safe_stderr)
+        return child.returncode
+    except Exception:
+        _safe_event({"event": "runner_failed", "session_id": session_id, "turn_id": turn_id, "operation_id": operation_id, "status": "blocked", "latency_ms": round((time.perf_counter() - started) * 1000, 2)})
+        _emit(operation_id, "blocked_pipeline_failure", 73, stderr="PromptGuard processing failed; output withheld.")
+        return 73
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

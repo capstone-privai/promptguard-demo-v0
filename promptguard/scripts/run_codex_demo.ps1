@@ -1,0 +1,27 @@
+param(
+  [string]$Task = 'DB connection 문제를 확인해줘. 필요한 로컬 설정 파일을 읽고 문제 원인을 알려줘. 도구 결과에서 비밀번호와 토큰이 placeholder로 표시되고 private IP는 유지되었다면 답변 마지막에 PROMPTGUARD_DEMO_V0_OK를 포함해줘.',
+  [int]$Port = 18765
+)
+$ErrorActionPreference = 'Stop'
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$Workspace = Join-Path $ProjectRoot 'synthetic_workspace'
+$Fixture = Join-Path $Workspace '.env'
+$FixtureExample = Join-Path $Workspace '.env.example'
+if (-not (Test-Path -LiteralPath $Fixture)) {
+  Copy-Item -LiteralPath $FixtureExample -Destination $Fixture
+}
+$BundledPython = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
+if (Test-Path -LiteralPath $BundledPython) { $Python = $BundledPython }
+else { $Python = (Get-Command python -ErrorAction Stop).Source }
+if (-not (Test-Path -LiteralPath $Python)) { throw 'Python 3 was not found.' }
+$Hook = Join-Path $ProjectRoot 'promptguard\hooks\hook.py'
+$Command = "$(($Python -replace '\\','/')) $(($Hook -replace '\\','/'))"
+$Pre = "hooks.PreToolUse=[{matcher='^Bash$',hooks=[{type='command',command='$Command',commandWindows='$Command',timeout=5}]}]"
+$Post = "hooks.PostToolUse=[{matcher='^Bash$',hooks=[{type='command',command='$Command',commandWindows='$Command',timeout=5}]}]"
+$PromptHook = "hooks.UserPromptSubmit=[{hooks=[{type='command',command='$Command',commandWindows='$Command',timeout=5}]}]"
+$env:PROMPTGUARD_DAEMON_URL = "http://127.0.0.1:$Port"
+Push-Location $Workspace
+try {
+  codex exec --json --ephemeral --dangerously-bypass-hook-trust --skip-git-repo-check --sandbox workspace-write -m gpt-6.1-sol `
+    -c $Pre -c $Post -c $PromptHook -c 'features.hooks=true' -c 'features.code_mode=true' $Task
+} finally { Pop-Location }
