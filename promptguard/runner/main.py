@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 import time
@@ -16,6 +18,19 @@ from promptguard.decision.mock_predictor import MockPredictor  # noqa: E402
 from promptguard.detector.rules import detect_candidates  # noqa: E402
 from promptguard.redaction.engine import redact  # noqa: E402
 from promptguard.transport.client import TransportError, post  # noqa: E402
+
+
+def _resolve_powershell() -> str:
+    candidates = [
+        os.environ.get("PROMPTGUARD_POWERSHELL"),
+        shutil.which("pwsh.exe"),
+        shutil.which("powershell.exe"),
+        str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"),
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return candidate
+    raise FileNotFoundError("PowerShell executable was not found")
 
 
 def _emit(operation_id: str, status: str, exit_code: int, stdout: str = "", stderr: str = "") -> None:
@@ -47,7 +62,7 @@ def main() -> int:
     session_id, turn_id = operation["session_id"], operation["turn_id"]
     try:
         child = subprocess.run(
-            ["pwsh.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", operation["command"]],
+            [_resolve_powershell(), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", operation["command"]],
             cwd=Path.cwd(), capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
@@ -74,8 +89,8 @@ def main() -> int:
         })
         _emit(operation_id, "executed", child.returncode, safe_stdout, safe_stderr)
         return child.returncode
-    except Exception:
-        _safe_event({"event": "runner_failed", "session_id": session_id, "turn_id": turn_id, "operation_id": operation_id, "status": "blocked", "latency_ms": round((time.perf_counter() - started) * 1000, 2)})
+    except Exception as exc:
+        _safe_event({"event": "runner_failed", "session_id": session_id, "turn_id": turn_id, "operation_id": operation_id, "status": "blocked", "failure_kind": type(exc).__name__, "latency_ms": round((time.perf_counter() - started) * 1000, 2)})
         _emit(operation_id, "blocked_pipeline_failure", 73, stderr="PromptGuard processing failed; output withheld.")
         return 73
 

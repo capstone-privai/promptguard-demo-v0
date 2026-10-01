@@ -120,7 +120,7 @@ class Handler(BaseHTTPRequestHandler):
                     index = by_type[digest]
                 return self._send(200, {"placeholder": f"[{candidate_type}_{index}]"})
             if self.path == "/event":
-                allowed = {"session_id", "turn_id", "operation_id", "status", "latency_ms", "candidate_count", "candidate_types", "actions", "marker_present", "exit_code"}
+                allowed = {"session_id", "turn_id", "operation_id", "status", "failure_kind", "latency_ms", "candidate_count", "candidate_types", "actions", "marker_present", "exit_code"}
                 metadata = {key: value for key, value in body.items() if key in allowed}
                 self.server.state.audit.write(str(body.get("event", "runtime_event")), **metadata)
                 return self._send(200, {"ok": True})
