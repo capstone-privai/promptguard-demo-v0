@@ -33,6 +33,44 @@ def _resolve_powershell() -> str:
     raise FileNotFoundError("PowerShell executable was not found")
 
 
+def _child_environment() -> dict[str, str]:
+    """Preserve the caller environment and expose the active Codex tool bundle."""
+    environment = os.environ.copy()
+    path_entries = [entry for entry in environment.get("PATH", "").split(os.pathsep) if entry]
+    candidates: list[Path] = []
+
+    configured_bin = environment.get("PROMPTGUARD_CODEX_BIN")
+    if configured_bin:
+        candidates.append(Path(configured_bin))
+
+    codex_cli = environment.get("CODEX_CLI_PATH")
+    if codex_cli:
+        candidates.append(Path(codex_cli).parent)
+
+    local_app_data = environment.get("LOCALAPPDATA")
+    if local_app_data:
+        codex_bin_root = Path(local_app_data) / "OpenAI" / "Codex" / "bin"
+        if codex_bin_root.is_dir():
+            discovered = sorted(
+                (item.parent for item in codex_bin_root.glob("*/rg.exe") if item.is_file()),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            )
+            candidates.extend(discovered)
+
+    known = {os.path.normcase(os.path.abspath(entry)) for entry in path_entries}
+    for candidate in candidates:
+        if not candidate.is_dir():
+            continue
+        normalized = os.path.normcase(os.path.abspath(str(candidate)))
+        if normalized not in known:
+            path_entries.insert(0, str(candidate))
+            known.add(normalized)
+
+    environment["PATH"] = os.pathsep.join(path_entries)
+    return environment
+
+
 def _emit(operation_id: str, status: str, exit_code: int, stdout: str = "", stderr: str = "") -> None:
     sys.stdout.write(
         f"[PROMPTGUARD_RESULT]\noperation_id={operation_id}\nstatus={status}\nexit_code={exit_code}\n"
@@ -64,6 +102,7 @@ def main() -> int:
         child = subprocess.run(
             [_resolve_powershell(), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", operation["command"]],
             cwd=Path.cwd(), capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+            env=_child_environment(),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         stdout_candidates = detect_candidates(child.stdout, session_id=session_id, turn_id=turn_id, operation_id=operation_id, channel="stdout")

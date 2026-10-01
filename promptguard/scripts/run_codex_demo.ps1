@@ -30,6 +30,7 @@ $Pre = "hooks.PreToolUse=[{matcher='^Bash$',hooks=[{type='command',command='$Com
 $Post = "hooks.PostToolUse=[{matcher='^Bash$',hooks=[{type='command',command='$Command',commandWindows='$Command',timeout=5}]}]"
 $PromptHook = "hooks.UserPromptSubmit=[{hooks=[{type='command',command='$Command',commandWindows='$Command',timeout=5}]}]"
 $env:PROMPTGUARD_DAEMON_URL = "http://127.0.0.1:$Port"
+$env:PROMPTGUARD_CODEX_BIN = Split-Path -Parent $Codex
 Push-Location $Workspace
 try {
   & $Codex exec --json --ephemeral --dangerously-bypass-hook-trust --skip-git-repo-check --sandbox workspace-write -m gpt-6.1-sol `

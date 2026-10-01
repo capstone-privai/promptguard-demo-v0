@@ -39,6 +39,7 @@ From this repository root in PowerShell:
 
 The launcher copies the committed synthetic `.env.example` to an ignored local `.env` when needed. No real credential is required or expected.
 It first checks `PATH` for `codex` and then automatically detects the Codex desktop app's bundled `codex.exe`, so the VS Code terminal does not need a separate global CLI installation.
+The launcher also passes that detected, version-specific Codex binary directory to the runner. This makes bundled tools such as `rg.exe` available without hard-coding the changing Codex build hash.
 
 The Demo task is:
 
