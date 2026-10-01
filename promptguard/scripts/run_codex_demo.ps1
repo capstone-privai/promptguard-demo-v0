@@ -14,6 +14,16 @@ $BundledPython = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary
 if (Test-Path -LiteralPath $BundledPython) { $Python = $BundledPython }
 else { $Python = (Get-Command python -ErrorAction Stop).Source }
 if (-not (Test-Path -LiteralPath $Python)) { throw 'Python 3 was not found.' }
+$CodexCommand = Get-Command codex -ErrorAction SilentlyContinue
+if ($CodexCommand) { $Codex = $CodexCommand.Source }
+else {
+  $Codex = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin\*\codex.exe') -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $Codex -or -not (Test-Path -LiteralPath $Codex)) {
+  throw 'Codex CLI was not found. Install/open the Codex desktop app or add codex.exe to PATH.'
+}
 $Hook = Join-Path $ProjectRoot 'promptguard\hooks\hook.py'
 $Command = "$(($Python -replace '\\','/')) $(($Hook -replace '\\','/'))"
 $Pre = "hooks.PreToolUse=[{matcher='^Bash$',hooks=[{type='command',command='$Command',commandWindows='$Command',timeout=5}]}]"
@@ -22,6 +32,6 @@ $PromptHook = "hooks.UserPromptSubmit=[{hooks=[{type='command',command='$Command
 $env:PROMPTGUARD_DAEMON_URL = "http://127.0.0.1:$Port"
 Push-Location $Workspace
 try {
-  codex exec --json --ephemeral --dangerously-bypass-hook-trust --skip-git-repo-check --sandbox workspace-write -m gpt-6.1-sol `
+  & $Codex exec --json --ephemeral --dangerously-bypass-hook-trust --skip-git-repo-check --sandbox workspace-write -m gpt-6.1-sol `
     -c $Pre -c $Post -c $PromptHook -c 'features.hooks=true' -c 'features.code_mode=true' $Task
 } finally { Pop-Location }
