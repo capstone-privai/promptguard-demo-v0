@@ -13,8 +13,8 @@ class PipelineTests(unittest.TestCase):
         self.text = (
             "DB_HOST=10.20.30.15\n"
             "DB_USER=deploy\n"
-            "DB_PASSWORD=PG_FAKE_PASSWORD_UNIT\n"
-            "API_TOKEN=PG_FAKE_TOKEN_UNIT\n"
+            "DB_PASSWORD=mysecret123\n"
+            "DATABASE_URL=postgresql://admin:secret123@prod-db.internal:5432/payments\n"
             "LOG_LEVEL=debug\n"
         )
         self.candidates = detect_candidates(
@@ -22,7 +22,8 @@ class PipelineTests(unittest.TestCase):
         )
 
     def test_candidate_shape_and_shared_location(self) -> None:
-        self.assertEqual([item.type for item in self.candidates], ["PRIVATE_IP", "PASSWORD", "TOKEN"])
+        self.assertEqual([item.type for item in self.candidates], ["PASSWORD", "PASSWORD"])
+        self.assertEqual([item.meta["rule"] for item in self.candidates], ["Password", "URL Credentials"])
         for item in self.candidates:
             record = {
                 "value": item.text,
@@ -36,7 +37,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_mock_decision_and_redaction(self) -> None:
         predictions = MockPredictor().predict(self.candidates, {"prompt": "synthetic task"})
-        self.assertEqual([item.action for item in predictions], ["KEEP", "MASK", "MASK"])
+        self.assertEqual([item.action for item in predictions], ["MASK", "MASK"])
         assigned: dict[tuple[str, str], str] = {}
 
         def allocate(candidate_type: str, digest: str) -> str:
@@ -47,8 +48,19 @@ class PipelineTests(unittest.TestCase):
         safe = redact(self.text, self.candidates, predictions, allocate)
         self.assertIn("DB_HOST=10.20.30.15", safe)
         self.assertIn("DB_PASSWORD=[PASSWORD_1]", safe)
-        self.assertIn("API_TOKEN=[TOKEN_1]", safe)
-        self.assertNotIn("PG_FAKE_", safe)
+        self.assertIn("postgresql://admin:[PASSWORD_2]@prod-db.internal:5432/payments", safe)
+        self.assertNotIn("mysecret123", safe)
+        self.assertNotIn(":secret123@", safe)
+
+    def test_mysql_uri_false_positive_does_not_mask_port_or_database(self) -> None:
+        text = "DATABASE_URL=mysql://user:secret@db.internal:3306/app\n"
+        candidates = detect_candidates(
+            text, session_id="s1", turn_id="t1", operation_id="o2", channel="stdout"
+        )
+        self.assertEqual([(item.meta["rule"], item.text) for item in candidates], [("URL Credentials", "secret")])
+        predictions = MockPredictor().predict(candidates, {})
+        safe = redact(text, candidates, predictions, lambda _type, _digest: "[PASSWORD_1]")
+        self.assertEqual(safe, "DATABASE_URL=mysql://user:[PASSWORD_1]@db.internal:3306/app\n")
 
 
 if __name__ == "__main__":

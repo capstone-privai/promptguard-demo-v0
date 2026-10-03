@@ -14,7 +14,7 @@ from promptguard.transport.client import TransportError, post  # noqa: E402
 
 
 RUNNER = ROOT / "promptguard" / "runner" / "main.py"
-RAW_SECRET = re.compile(r"\bPG_FAKE_(?:PASSWORD|TOKEN|API_KEY)_[A-Za-z0-9_-]+\b")
+RAW_SECRET = re.compile(r"\bPG_FAKE_[A-Za-z0-9_-]+\b")
 
 
 def _ps_quote(value: str) -> str:

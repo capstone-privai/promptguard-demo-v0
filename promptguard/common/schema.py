@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 
-CandidateType = Literal["PASSWORD", "TOKEN", "PRIVATE_IP"]
+CandidateType = Literal["PASSWORD", "TOKEN", "ACCESS_KEY", "PRIVATE_KEY", "SECRET"]
 Action = Literal["KEEP", "MASK"]
 
 

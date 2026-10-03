@@ -13,7 +13,7 @@ class MockPredictor:
         return [
             Prediction(
                 candidate_id=candidate.candidate_id,
-                action="MASK" if candidate.type in {"PASSWORD", "TOKEN"} else "KEEP",
+                action="MASK",
                 confidence=1.0,
             )
             for candidate in candidates

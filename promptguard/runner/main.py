@@ -15,7 +15,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from promptguard.decision.mock_predictor import MockPredictor  # noqa: E402
-from promptguard.detector.rules import detect_candidates  # noqa: E402
 from promptguard.redaction.engine import redact  # noqa: E402
 from promptguard.transport.client import TransportError, post  # noqa: E402
 
@@ -99,6 +98,10 @@ def main() -> int:
 
     session_id, turn_id = operation["session_id"], operation["turn_id"]
     try:
+        # Claim the short-lived operation before importing CredSweeper and its
+        # heavier dependencies. The command remains memory-only after claim.
+        from promptguard.detector.rules import detect_candidates
+
         child = subprocess.run(
             [_resolve_powershell(), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", operation["command"]],
             cwd=Path.cwd(), capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,

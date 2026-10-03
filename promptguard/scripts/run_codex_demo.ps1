@@ -7,13 +7,10 @@ $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Workspace = Join-Path $ProjectRoot 'synthetic_workspace'
 $Fixture = Join-Path $Workspace '.env'
 $FixtureExample = Join-Path $Workspace '.env.example'
-if (-not (Test-Path -LiteralPath $Fixture)) {
-  Copy-Item -LiteralPath $FixtureExample -Destination $Fixture
-}
-$BundledPython = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
-if (Test-Path -LiteralPath $BundledPython) { $Python = $BundledPython }
-else { $Python = (Get-Command python -ErrorAction Stop).Source }
-if (-not (Test-Path -LiteralPath $Python)) { throw 'Python 3 was not found.' }
+# Always refresh the ignored fixture so every run uses the documented synthetic data.
+Copy-Item -LiteralPath $FixtureExample -Destination $Fixture -Force
+$Python = Join-Path $ProjectRoot '.venv\Scripts\python.exe'
+if (-not (Test-Path -LiteralPath $Python)) { throw 'Run .\promptguard\scripts\setup.ps1 first.' }
 $CodexCommand = Get-Command codex -ErrorAction SilentlyContinue
 if ($CodexCommand) { $Codex = $CodexCommand.Source }
 else {
