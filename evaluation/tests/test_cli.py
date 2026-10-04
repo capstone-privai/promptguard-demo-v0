@@ -66,6 +66,14 @@ class CliTests(unittest.TestCase):
         code, output = self._main("run", "--dataset", str(FIXTURE), "--system", "promptguard", "--out", str(self.out_dir))
         self.assertEqual(code, EXIT_OK, output)
         self.assertIn("gold=12", output)
+        self.assertIn("results: ", output)
+
+    def test_run_promptguard_sweep(self) -> None:
+        code, output = self._main("run", "--dataset", str(FIXTURE), "--system", "promptguard", "--sweep", "0:1:0.5",
+                                  "--out", str(self.out_dir))
+        self.assertEqual(code, EXIT_OK, output)
+        self.assertEqual(output.count("threshold="), 3)
+        self.assertIn("pr_auc=N/A", output)
 
     def test_invalid_dataset_exits_1(self) -> None:
         code, output = self._main("run", "--dataset", str(self._broken_dataset()), "--system", "oracle",
@@ -75,8 +83,9 @@ class CliTests(unittest.TestCase):
 
     def test_unverifiable_edits_exit_2_without_results(self) -> None:
         out = io.StringIO()
-        code = execute_run(str(FIXTURE), lambda _threshold: LyingAdapter(), out=out)
+        code = execute_run(str(FIXTURE), lambda _threshold: LyingAdapter(), out_root=self.out_dir, out=out)
         self.assertEqual(code, EXIT_SCORING)
+        self.assertFalse(self.out_dir.exists())
         self.assertIn("session=s-0001 item=s-0001/2", out.getvalue())
         self.assertIn("first difference at offset", out.getvalue())
         self.assertNotIn("mysecret123", out.getvalue())
@@ -88,7 +97,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, EXIT_CONFIG)
         for extra in (["--system", "promptguard", "--predictor", "does-not-exist"],
                       ["--system", "promptguard", "--threshold", "1.5"],
-                      ["--system", "oracle", "--threshold", "0.5"]):
+                      ["--system", "oracle", "--threshold", "0.5"],
+                      ["--system", "oracle", "--sweep", "0:1:0.5"],
+                      ["--system", "promptguard", "--sweep", "1:0:0.5"],
+                      ["--system", "promptguard", "--threshold", "0.5", "--sweep", "0:1:0.5"],
+                      ["--system", "oracle", "--ml", "on"]):
             code, _output = self._main("run", "--dataset", str(FIXTURE), "--out", str(self.out_dir), *extra)
             self.assertEqual(code, EXIT_CONFIG, extra)
 
