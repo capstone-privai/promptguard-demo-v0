@@ -7,3 +7,4 @@ __pycache__/
 .venv/
 runs/
 evaluation_data/
+.python-version
