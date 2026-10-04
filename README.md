@@ -37,6 +37,10 @@ From this repository root in PowerShell, install the pinned detector dependency 
 ./promptguard/scripts/setup.ps1
 ```
 
+On Windows the setup script prefers the Codex desktop app's bundled Python so
+the generated venv remains executable from the sandboxed Hook process. It falls
+back to `python` or `py` only when that bundled interpreter is unavailable.
+
 Then start the daemon and run the Codex task:
 
 ```powershell
