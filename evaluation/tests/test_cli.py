@@ -75,6 +75,13 @@ class CliTests(unittest.TestCase):
         self.assertEqual(output.count("threshold="), 3)
         self.assertIn("pr_auc=N/A", output)
 
+    def test_run_credsweeper(self) -> None:
+        for ml in ("off", "on"):
+            code, output = self._main("run", "--dataset", str(FIXTURE), "--system", "credsweeper", "--ml", ml,
+                                      "--out", str(self.out_dir))
+            self.assertEqual(code, EXIT_OK, output)
+            self.assertIn(f"credsweeper_ml-{ml}", output)
+
     def test_invalid_dataset_exits_1(self) -> None:
         code, output = self._main("run", "--dataset", str(self._broken_dataset()), "--system", "oracle",
                                   "--out", str(self.out_dir))
