@@ -5,3 +5,5 @@ synthetic_workspace/.env
 __pycache__/
 *.pyc
 .venv/
+runs/
+evaluation_data/

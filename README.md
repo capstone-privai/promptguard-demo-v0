@@ -116,6 +116,10 @@ predict(candidates, task_context) -> list[Prediction]
 
 Every candidate must receive one `KEEP` or `MASK` prediction with the same `candidate_id`. `Prediction.confidence` is the probability that the candidate should be masked, whichever action was chosen, so evaluation can sweep a threshold over it.
 
+## Evaluation
+
+`evaluation/` measures metric 1 (detection performance) by running a fixed test set through `promptguard.pipeline`. It runs on macOS and Linux without Codex, hooks or the daemon. See [evaluation/README.md](evaluation/README.md).
+
 ## Explicit limitations
 
 - Windows/PowerShell and Codex CLI only
