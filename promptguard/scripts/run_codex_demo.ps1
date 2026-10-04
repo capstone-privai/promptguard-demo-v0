@@ -23,6 +23,8 @@ if (-not $Codex -or -not (Test-Path -LiteralPath $Codex)) {
 }
 $Hook = Join-Path $ProjectRoot 'promptguard\hooks\hook.py'
 $Command = "$(($Python -replace '\\','/')) $(($Hook -replace '\\','/'))"
+# The '^Bash$' matcher defines which channels are redacted (Bash stdout/stderr). Keep it in
+# sync with PROCESSED_CHANNELS in promptguard/pipeline.py and change both together.
 $Pre = "hooks.PreToolUse=[{matcher='^Bash$',hooks=[{type='command',command='$Command',commandWindows='$Command',timeout=5}]}]"
 $Post = "hooks.PostToolUse=[{matcher='^Bash$',hooks=[{type='command',command='$Command',commandWindows='$Command',timeout=5}]}]"
 $PromptHook = "hooks.UserPromptSubmit=[{hooks=[{type='command',command='$Command',commandWindows='$Command',timeout=5}]}]"

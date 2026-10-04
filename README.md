@@ -17,11 +17,12 @@ promptguard/
   audit/       metadata-only JSONL logging
   common/      canonical location.py and schemas
   daemon/      loopback daemon and in-memory registries
-  decision/    Predictor interface and MockPredictor
+  decision/    Predictor interface, MockPredictor and name-based predictor loading
   detector/    CredSweeper adapter and span normalization
   hooks/       Codex lifecycle hook
-  redaction/   span-safe replacement and fingerprints
+  redaction/   span-safe replacement, fingerprints and session placeholder numbering
   runner/      opaque operation runner
+  pipeline.py  detection → decision → redaction assembly shared with evaluation
   scripts/     PowerShell launch helpers
   tests/
 synthetic_workspace/
@@ -93,15 +94,23 @@ The canonical location implementation is `promptguard/common/location.py`. Pipel
 
 Each in-memory candidate has IDs and type, raw `text`, canonical `span`, `line`, `context`, `meta.line_crop_offset`, and `source`. The raw value is passed to the predictor in memory but is never written to audit logs. Dataset code should import the same `locate`, `build_location`, `check_span`, `split_lines`, and `window_text` functions from `promptguard.common.location`.
 
+## Shared pipeline and processed channels
+
+`promptguard/pipeline.py` holds the runtime assembly: `process_output(text, *, session_id, turn_id, operation_id, channel, task_context, predictor, allocate)` runs detection, decision and redaction, and `build_task_context(prompt, turn_id)` builds the `task_context` the daemon attaches to each operation. The runner calls these functions directly; evaluation should import them rather than copy runner code. The module imports only detector, decision and redaction code (no PowerShell, subprocess or HTTP transport), so it runs on Linux and in CI. A test enforces this import rule.
+
+`PROCESSED_CHANNELS` declares the inputs the system actually redacts: Bash tool `stdout` and `stderr`. The user prompt and `AGENTS.md` reach Codex unprocessed, and `process_output` rejects any other channel. **Rule:** this list must match the `^Bash$` hook matcher in `promptguard/scripts/run_codex_demo.ps1`; change both together when adding a channel.
+
+`promptguard/redaction/placeholders.py` provides `PlaceholderRegistry` (session → type → value fingerprint → number). The daemon's `/placeholder` route and the tests share it.
+
 ## Replace the mock model
 
-Implement the protocol in `promptguard/decision/base.py`, then change only the predictor construction in `promptguard/runner/main.py`. The method contract is:
+Implement the protocol in `promptguard/decision/base.py` and register it by name with `register_predictor` in `promptguard/decision/registry.py`. The runner picks a predictor through `load_predictor()`: an explicit name, else `$PROMPTGUARD_PREDICTOR`, else `mock`. Unknown names fail closed (output withheld). The method contract is:
 
 ```python
 predict(candidates, task_context) -> list[Prediction]
 ```
 
-Every candidate must receive one `KEEP` or `MASK` prediction with the same `candidate_id`.
+Every candidate must receive one `KEEP` or `MASK` prediction with the same `candidate_id`. `Prediction.confidence` is the probability that the candidate should be masked, whichever action was chosen, so evaluation can sweep a threshold over it.
 
 ## Explicit limitations
 

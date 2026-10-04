@@ -32,7 +32,7 @@ class Candidate:
 class Prediction:
     candidate_id: str
     action: Action
-    confidence: float
+    confidence: float  # P(candidate should be MASKed); see decision/base.py
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
