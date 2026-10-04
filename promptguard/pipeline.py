@@ -11,7 +11,7 @@ from typing import Any
 
 from promptguard.common.schema import Candidate, Prediction
 from promptguard.decision.base import Predictor
-from promptguard.redaction.engine import PlaceholderAllocator, redact
+from promptguard.redaction.engine import Edit, PlaceholderAllocator, redact
 
 
 # Input channels this system actually redacts: Bash tool stdout/stderr only. The user
@@ -27,6 +27,7 @@ class ProcessedOutput:
     text: str
     candidates: list[Candidate]
     predictions: list[Prediction]
+    edits: list[Edit]  # (start, end, replacement) against the original text
 
 
 def build_task_context(prompt: str, turn_id: str) -> dict[str, Any]:
@@ -53,4 +54,5 @@ def process_output(
 
     candidates = detect_candidates(text, session_id=session_id, turn_id=turn_id, operation_id=operation_id, channel=channel)
     predictions = predictor.predict(candidates, task_context)
-    return ProcessedOutput(redact(text, candidates, predictions, allocate), candidates, predictions)
+    safe_text, edits = redact(text, candidates, predictions, allocate)
+    return ProcessedOutput(safe_text, candidates, predictions, edits)

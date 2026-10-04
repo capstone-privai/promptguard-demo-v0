@@ -46,7 +46,7 @@ class PipelineTests(unittest.TestCase):
     def test_mock_decision_and_redaction(self) -> None:
         predictions = MockPredictor().predict(self.candidates, {"prompt": "synthetic task"})
         self.assertEqual([item.action for item in predictions], ["MASK", "MASK"])
-        safe = redact(self.text, self.candidates, predictions, PlaceholderRegistry().allocator("s1"))
+        safe, _edits = redact(self.text, self.candidates, predictions, PlaceholderRegistry().allocator("s1"))
         self.assertIn("DB_HOST=10.20.30.15", safe)
         self.assertIn("DB_PASSWORD=[PASSWORD_1]", safe)
         self.assertIn("postgresql://admin:[PASSWORD_2]@prod-db.internal:5432/payments", safe)
@@ -60,7 +60,7 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertEqual([(item.meta["rule"], item.text) for item in candidates], [("URL Credentials", "secret")])
         predictions = MockPredictor().predict(candidates, {})
-        safe = redact(text, candidates, predictions, lambda _type, _digest: "[PASSWORD_1]")
+        safe, _edits = redact(text, candidates, predictions, lambda _type, _digest: "[PASSWORD_1]")
         self.assertEqual(safe, "DATABASE_URL=mysql://user:[PASSWORD_1]@db.internal:3306/app\n")
 
     def test_process_output_matches_manual_assembly(self) -> None:
@@ -70,11 +70,16 @@ class PipelineTests(unittest.TestCase):
             self.text, session_id="s1", turn_id="t1", operation_id="o1", channel="stdout",
             task_context=task_context, predictor=MockPredictor(), allocate=PlaceholderRegistry().allocator("s1"),
         )
-        manual = redact(
+        manual_text, manual_edits = redact(
             self.text, self.candidates, MockPredictor().predict(self.candidates, task_context),
             PlaceholderRegistry().allocator("s1"),
         )
-        self.assertEqual(result.text, manual)
+        self.assertEqual(result.text, manual_text)
+        self.assertEqual(result.edits, manual_edits)
+        self.assertEqual(
+            [(edit.replacement, self.text[edit.start : edit.end]) for edit in result.edits],
+            [("[PASSWORD_1]", "mysecret123"), ("[PASSWORD_2]", "secret123")],
+        )
         self.assertEqual(result.candidates, self.candidates)
         self.assertEqual([item.action for item in result.predictions], ["MASK", "MASK"])
         self.assertIn("DB_PASSWORD=[PASSWORD_1]", result.text)
