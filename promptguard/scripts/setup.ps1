@@ -4,17 +4,20 @@ $Venv = Join-Path $ProjectRoot '.venv'
 $Python = Join-Path $Venv 'Scripts\python.exe'
 
 if (-not (Test-Path -LiteralPath $Python)) {
-  $BasePython = Get-Command python -ErrorAction SilentlyContinue
-  if ($BasePython) { $BasePythonPath = $BasePython.Source }
+  # Prefer the Codex-bundled interpreter. A venv created from a user-installed
+  # Python under AppData may be runnable in this terminal but inaccessible to
+  # the sandboxed Codex Hook process on Windows.
+  $BundledPython = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
+  if (Test-Path -LiteralPath $BundledPython) { $BasePythonPath = $BundledPython }
   else {
-    $PyLauncher = Get-Command py -ErrorAction SilentlyContinue
-    if ($PyLauncher) { $BasePythonPath = $PyLauncher.Source }
+    $BasePython = Get-Command python -ErrorAction SilentlyContinue
+    if ($BasePython) { $BasePythonPath = $BasePython.Source }
     else {
-      $BundledPython = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
-      if (-not (Test-Path -LiteralPath $BundledPython)) {
+      $PyLauncher = Get-Command py -ErrorAction SilentlyContinue
+      if ($PyLauncher) { $BasePythonPath = $PyLauncher.Source }
+      else {
         throw 'Python 3 was not found. Install Python or open/update the Codex desktop app.'
       }
-      $BasePythonPath = $BundledPython
     }
   }
   & $BasePythonPath -m venv $Venv

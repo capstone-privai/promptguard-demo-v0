@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from promptguard.audit.logger import AuditLogger
+from promptguard.pipeline import build_task_context
+from promptguard.redaction.placeholders import PlaceholderRegistry
 
 
 DEFAULT_TTL_SECONDS = 5.0
@@ -21,7 +23,7 @@ class State:
         self.lock = threading.Lock()
         self.operations: dict[str, dict[str, Any]] = {}
         self.tasks: dict[str, dict[str, Any]] = {}
-        self.placeholders: dict[str, dict[str, dict[str, int]]] = {}
+        self.placeholders = PlaceholderRegistry()
         self.audit = AuditLogger(audit_path)
 
     def sweep(self) -> None:
@@ -34,7 +36,7 @@ class State:
             stale_tasks = [key for key, value in self.tasks.items() if value["expires_at"] <= now]
             for key in stale_tasks:
                 self.tasks.pop(key, None)
-                self.placeholders.pop(key, None)
+                self.placeholders.drop(key)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -92,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
                         "command": command,
                         "session_id": session_id,
                         "turn_id": turn_id,
-                        "task_context": {"prompt": task.get("prompt", ""), "turn_id": task.get("turn_id", "")},
+                        "task_context": build_task_context(task.get("prompt", ""), task.get("turn_id", "")),
                         "expires_at": time.monotonic() + ttl,
                     }
                 self.server.state.audit.write("operation_registered", session_id=session_id, turn_id=turn_id, operation_id=operation_id, status="ok", latency_ms=round((time.perf_counter() - started) * 1000, 2))
@@ -114,11 +116,8 @@ class Handler(BaseHTTPRequestHandler):
                 candidate_type = str(body["candidate_type"])
                 digest = str(body["fingerprint"])
                 with self.server.state.lock:
-                    by_type = self.server.state.placeholders.setdefault(session_id, {}).setdefault(candidate_type, {})
-                    if digest not in by_type:
-                        by_type[digest] = len(by_type) + 1
-                    index = by_type[digest]
-                return self._send(200, {"placeholder": f"[{candidate_type}_{index}]"})
+                    placeholder = self.server.state.placeholders.allocate(session_id, candidate_type, digest)
+                return self._send(200, {"placeholder": placeholder})
             if self.path == "/event":
                 allowed = {"session_id", "turn_id", "operation_id", "status", "failure_kind", "latency_ms", "candidate_count", "candidate_types", "actions", "marker_present", "exit_code"}
                 metadata = {key: value for key, value in body.items() if key in allowed}

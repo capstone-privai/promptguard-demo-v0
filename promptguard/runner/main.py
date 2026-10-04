@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from promptguard.decision.mock_predictor import MockPredictor  # noqa: E402
-from promptguard.redaction.engine import redact  # noqa: E402
+from promptguard.decision.registry import load_predictor  # noqa: E402
+from promptguard.pipeline import ProcessedOutput, process_output  # noqa: E402
 from promptguard.transport.client import TransportError, post  # noqa: E402
 
 
@@ -98,30 +98,30 @@ def main() -> int:
 
     session_id, turn_id = operation["session_id"], operation["turn_id"]
     try:
-        # Claim the short-lived operation before importing CredSweeper and its
-        # heavier dependencies. The command remains memory-only after claim.
-        from promptguard.detector.rules import detect_candidates
-
         child = subprocess.run(
             [_resolve_powershell(), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", operation["command"]],
             cwd=Path.cwd(), capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
             env=_child_environment(),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-        stdout_candidates = detect_candidates(child.stdout, session_id=session_id, turn_id=turn_id, operation_id=operation_id, channel="stdout")
-        stderr_candidates = detect_candidates(child.stderr, session_id=session_id, turn_id=turn_id, operation_id=operation_id, channel="stderr")
-        predictor = MockPredictor()
-        stdout_predictions = predictor.predict(stdout_candidates, operation.get("task_context", {}))
-        stderr_predictions = predictor.predict(stderr_candidates, operation.get("task_context", {}))
+        predictor = load_predictor()
+        task_context = operation.get("task_context", {})
 
         def allocate(candidate_type: str, digest: str) -> str:
             response = post("/placeholder", {"session_id": session_id, "candidate_type": candidate_type, "fingerprint": digest})
             return str(response["placeholder"])
 
-        safe_stdout = redact(child.stdout, stdout_candidates, stdout_predictions, allocate)
-        safe_stderr = redact(child.stderr, stderr_candidates, stderr_predictions, allocate)
-        all_candidates = [*stdout_candidates, *stderr_candidates]
-        all_predictions = [*stdout_predictions, *stderr_predictions]
+        def process(text: str, channel: str) -> ProcessedOutput:
+            return process_output(
+                text, session_id=session_id, turn_id=turn_id, operation_id=operation_id, channel=channel,
+                task_context=task_context, predictor=predictor, allocate=allocate,
+            )
+
+        stdout_result = process(child.stdout, "stdout")
+        stderr_result = process(child.stderr, "stderr")
+        safe_stdout, safe_stderr = stdout_result.text, stderr_result.text
+        all_candidates = [*stdout_result.candidates, *stderr_result.candidates]
+        all_predictions = [*stdout_result.predictions, *stderr_result.predictions]
         _safe_event({
             "event": "runner_complete", "session_id": session_id, "turn_id": turn_id, "operation_id": operation_id,
             "status": "executed", "exit_code": child.returncode,
