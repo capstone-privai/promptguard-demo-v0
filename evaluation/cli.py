@@ -17,7 +17,7 @@ EXIT_DATASET = 1
 EXIT_SCORING = 2
 EXIT_CONFIG = 3
 
-SYSTEMS = ("oracle", "identity")
+SYSTEMS = ("promptguard", "oracle", "identity")
 
 AdapterFactory = Callable[[float | None], SystemUnderTest]
 
@@ -39,6 +39,8 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="run a system over a dataset and score it")
     run.add_argument("--dataset", required=True)
     run.add_argument("--system", required=True, choices=SYSTEMS)
+    run.add_argument("--predictor", help="predictor name for --system promptguard (default: mock)")
+    run.add_argument("--threshold", type=float, help="MASK iff confidence >= T (promptguard only)")
     run.add_argument("--out", default="runs")
     run.add_argument("--debug", action="store_true", help="also write raw candidates/predictions (may contain secrets)")
     return parser
@@ -61,6 +63,13 @@ def summary_line(metrics: dict[str, Any]) -> str:
 
 
 def adapter_factory(args: argparse.Namespace) -> AdapterFactory:
+    if args.system != "promptguard" and (args.predictor is not None or args.threshold is not None):
+        raise ConfigError("--predictor and --threshold apply to --system promptguard only")
+    if args.system == "promptguard":
+        from evaluation.adapters.promptguard_adapter import PromptGuardAdapter
+
+        predictor = args.predictor or "mock"
+        return lambda threshold: PromptGuardAdapter(predictor, threshold=threshold, debug=args.debug)
     if args.system == "oracle":
         from evaluation.adapters.reference import OracleAdapter
 
@@ -131,4 +140,4 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=out)
         return EXIT_CONFIG
-    return execute_run(args.dataset, make_adapter, out=out)
+    return execute_run(args.dataset, make_adapter, thresholds=(args.threshold,), out=out)

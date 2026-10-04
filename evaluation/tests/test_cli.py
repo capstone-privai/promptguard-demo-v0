@@ -62,6 +62,11 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, EXIT_OK, output)
             self.assertIn(recall, output)
 
+    def test_run_promptguard(self) -> None:
+        code, output = self._main("run", "--dataset", str(FIXTURE), "--system", "promptguard", "--out", str(self.out_dir))
+        self.assertEqual(code, EXIT_OK, output)
+        self.assertIn("gold=12", output)
+
     def test_invalid_dataset_exits_1(self) -> None:
         code, output = self._main("run", "--dataset", str(self._broken_dataset()), "--system", "oracle",
                                   "--out", str(self.out_dir))
@@ -81,6 +86,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, EXIT_CONFIG)
         code, _output = self._main("run", "--dataset", str(FIXTURE))
         self.assertEqual(code, EXIT_CONFIG)
+        for extra in (["--system", "promptguard", "--predictor", "does-not-exist"],
+                      ["--system", "promptguard", "--threshold", "1.5"],
+                      ["--system", "oracle", "--threshold", "0.5"]):
+            code, _output = self._main("run", "--dataset", str(FIXTURE), "--out", str(self.out_dir), *extra)
+            self.assertEqual(code, EXIT_CONFIG, extra)
 
 
 if __name__ == "__main__":
